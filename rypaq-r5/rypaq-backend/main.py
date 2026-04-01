@@ -12,10 +12,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import database setup
-from database import create_db_and_tables
+from database import create_db_and_tables, engine
+from sqlmodel import Session
+from seed_users import ensure_seed_users
 
 # Import route modules
-from routes import health, macro, deals, diligence, portfolios, alerts, uploads
+from routes import (
+    activity,
+    alerts,
+    auth,
+    deals,
+    diligence,
+    email_connect,
+    health,
+    lp_portal,
+    macro,
+    pipeline,
+    portfolios,
+    reports,
+    uploads,
+)
 
 # Create FastAPI app
 app = FastAPI(
@@ -26,16 +42,21 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+_cors = os.getenv("FRONTEND_ORIGINS", "").strip()
+_allow_origins = (
+    [o.strip() for o in _cors.split(",") if o.strip()]
+    if _cors
+    else [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
-        # "http://your-production-domain.com",   # ← add later
-    ],
+    ]
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,21 +70,26 @@ async def startup_event():
     """Initialize database on startup"""
     print("🚀 Starting Rypaq R1 Backend...")
     create_db_and_tables()
+    with Session(engine) as session:
+        ensure_seed_users(session)
     print("✅ Backend initialized successfully")
 
 
 # ==================== REGISTER ROUTES ====================
 
-# Health check routes
 app.include_router(health.router)
-
-# Feature routes
+app.include_router(auth.router)
 app.include_router(macro.router)
 app.include_router(deals.router)
 app.include_router(diligence.router)
 app.include_router(portfolios.router)
 app.include_router(alerts.router)
 app.include_router(uploads.router)
+app.include_router(activity.router)
+app.include_router(pipeline.router)
+app.include_router(reports.router)
+app.include_router(lp_portal.router)
+app.include_router(email_connect.router)
 
 
 # ==================== MAIN ====================

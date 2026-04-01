@@ -1,73 +1,77 @@
 import os
 import json
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+import time
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlmodel import Session, select
+
+from activity_service import log_activity
 from database import get_session
-from models import UploadedPDF, ExtractedData, Company, DueDiligenceReport, MacroIndicator
-from typing import List
+from dependencies import GPUser
+from demo_data import DEMO_UPLOADS
+from models import Company, DueDiligenceReport, ExtractedData, MacroIndicator, UploadedPDF
 from pypdf import PdfReader
-from google import genai
+
 from ai_models import pesa_risk_model
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
-# ====================== GOOGLE GEMINI SETUP ======================
+_gemini_client = None
 
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-if not gemini_api_key:
-    raise ValueError(
-        "❌ GEMINI_API_KEY is missing in .env!\n"
-        "Get it free from: https://aistudio.google.com/app/apikey"
-    )
 
-client = genai.Client(api_key=gemini_api_key)
-print("✅ Google Gemini client initialized (free tier)")
-# =======================================================
+def _get_gemini_client():
+    global _gemini_client
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        return None
+    if _gemini_client is None:
+        from google import genai
+
+        _gemini_client = genai.Client(api_key=key)
+    return _gemini_client
 
 
 @router.get("/list")
-async def list_uploads(session: Session = Depends(get_session)):
-    """List all uploaded PDFs with their associated company info."""
+async def list_uploads(user: GPUser, session: Session = Depends(get_session)):
+    if user.is_demo:
+        return DEMO_UPLOADS
     uploads = session.exec(select(UploadedPDF).order_by(UploadedPDF.upload_date.desc())).all()
     result = []
     for upload in uploads:
         company = None
         if upload.company_id:
             company = session.exec(select(Company).where(Company.id == upload.company_id)).first()
-        result.append({
-            "id": upload.id,
-            "filename": upload.filename,
-            "file_size_mb": round(upload.file_size_mb, 2),
-            "upload_date": upload.upload_date.isoformat(),
-            "company_id": company.external_id if company else None,
-            "company_name": company.name if company else None,
-        })
+        result.append(
+            {
+                "id": upload.id,
+                "filename": upload.filename,
+                "file_size_mb": round(upload.file_size_mb, 2),
+                "upload_date": upload.upload_date.isoformat(),
+                "company_id": company.external_id if company else None,
+                "company_name": company.name if company else None,
+            }
+        )
     return result
 
 
 @router.delete("/{upload_id}")
-async def delete_upload(upload_id: int, session: Session = Depends(get_session)):
-    """Delete an uploaded PDF and its associated data."""
+async def delete_upload(upload_id: int, user: GPUser, session: Session = Depends(get_session)):
+    if user.is_demo:
+        raise HTTPException(status_code=403, detail="Uploads are disabled in demo mode")
     upload = session.exec(select(UploadedPDF).where(UploadedPDF.id == upload_id)).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
     company_id = upload.company_id
-
-    # Delete extracted data linked to this PDF
     extracted_entries = session.exec(select(ExtractedData).where(ExtractedData.pdf_id == upload_id)).all()
     for e in extracted_entries:
         session.delete(e)
 
-    # Delete the upload record
     session.delete(upload)
     session.commit()
+    log_activity(session, user.id, "upload_delete", "upload", str(upload_id), {"filename": upload.filename})
 
-    # Check if company has any other uploads; if not, delete company + diligence report
     if company_id:
-        remaining = session.exec(
-            select(UploadedPDF).where(UploadedPDF.company_id == company_id)
-        ).all()
+        remaining = session.exec(select(UploadedPDF).where(UploadedPDF.company_id == company_id)).all()
         if len(remaining) == 0:
             report = session.exec(
                 select(DueDiligenceReport).where(DueDiligenceReport.company_id == company_id)
@@ -82,80 +86,89 @@ async def delete_upload(upload_id: int, session: Session = Depends(get_session))
     return {"message": "Upload deleted successfully", "id": upload_id}
 
 
+def _clamp(value, min_val, max_val):
+    if value is None:
+        return (min_val + max_val) / 2
+    try:
+        return round(max(min_val, min(max_val, float(value))), 1)
+    except Exception:
+        return (min_val + max_val) / 2
+
+
 @router.post("/pdf")
 async def upload_pdf(
-    file: UploadFile = File(..., max_size=50 * 1024 * 1024),  # 50 MB limit
-    session: Session = Depends(get_session)
+    user: GPUser,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
 ):
-    """Upload a PDF, extract text, interpret with LLM, run PesaRiskNet, and store data."""
-    if not file.content_type == "application/pdf":
+    if user.is_demo:
+        raise HTTPException(status_code=403, detail="PDF upload is disabled in demo mode. Use a full account.")
+    client = _get_gemini_client()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Document AI is not configured (set GEMINI_API_KEY in the server environment).",
+        )
+
+    if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
     file_location = None
     try:
-        # Save the uploaded file temporarily
         file_location = f"/tmp/{file.filename}"
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-        # Extract text using pypdf
         reader = PdfReader(file_location)
         text_content = ""
         for page in reader.pages:
-            text_content += page.extract_text() + "\n"
+            text_content += (page.extract_text() or "") + "\n"
 
-        
-        # === INTERPRET WITH GOOGLE GEMINI ===
-        llm_prompt = f"""You are a financial data extraction assistant for a private equity firm.
-Extract structured financial data AND risk assessment from the text below.
-If a value is not found, return null.
-Respond with ONLY a valid JSON object - no extra text, no explanations.
+        llm_prompt = f"""You are a financial analyst. Extract data from this document.
+If a value like revenue or debt is listed as 'millions', convert to absolute numbers (e.g. 5M -> 5000000).
+If 'Revenue' is not explicitly found, look for 'Total Sales', 'Total Income', or 'Turnover'.
+Respond ONLY with a valid JSON object.
 
-Required keys:
-- company_name (string)
-- sector (string)
-- revenue (float, in absolute numbers e.g. 5000000 for $5M)
-- ebitda (float or null)
-- debt (float or null)
-- enterprise_value (float or null)
-- red_flags (array of strings - specific risks, concerns, or negative indicators found in the document, max 5)
-- green_flags (array of strings - specific strengths, positive indicators, or opportunities found in the document, max 5)
-- market_risk_score (float 1-10, higher = more risky, based on market position and competition)
-- financial_health_score (float 1-10, higher = healthier, based on revenue, margins, debt)
-- operational_efficiency_score (float 1-10, higher = more efficient)
-- customer_concentration_score (float 1-10, higher = more concentrated/risky)
-- macro_sensitivity_score (float 1-10, higher = more sensitive to macro changes)
+Required fields:
+- company_name, sector, revenue (float), ebitda (float/null), debt (float/null), enterprise_value (float/null)
+- red_flags (list), green_flags (list)
+- market_risk_score, financial_health_score, operational_efficiency_score, customer_concentration_score, macro_sensitivity_score, data_integrity_score (all 1-10)
 
-Text: {text_content[:8000]}
+Text: {text_content[:10000]}
 
 JSON:"""
 
-        # This is the actual API call to Gemini (2026 SDK)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",                    # ← Best free/fast model in March 2026
-            contents=llm_prompt,                         # Simple text prompt (string works)
-            config={
-                "response_mime_type": "application/json" # ← Forces perfect JSON output
-            }
-        )
-        
-        # Extract the text and parse it as JSON
-        extracted_data_raw = response.text
-        extracted_data_json = json.loads(extracted_data_raw)
-        # =====================================================================
+        max_retries = 2
+        extracted_data_json = None
 
-        # Validate extracted data
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=llm_prompt,
+                    config={"response_mime_type": "application/json"},
+                )
+                extracted_data_json = json.loads(response.text)
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries:
+                    print(f"Rate limit hit. Waiting 60s (Attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(60)
+                    continue
+                raise e
+
         required_fields = ["company_name", "sector", "revenue"]
         for field in required_fields:
             if field not in extracted_data_json or extracted_data_json[field] is None:
-                raise HTTPException(status_code=400, detail=f"LLM failed to extract required field: {field}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"LLM failed to extract required field: {field}",
+                )
 
-        # Get latest macro indicators for PesaRiskNet
         macro = session.exec(select(MacroIndicator).order_by(MacroIndicator.timestamp.desc())).first()
         gdp = macro.gdp_growth if macro else 5.2
         inflation = macro.inflation_rate if macro else 3.8
 
-        # Run PesaRiskNet
         _revenue_val = float(extracted_data_json.get("revenue") or 1)
         _debt_val = float(extracted_data_json.get("debt") or 0)
         _debt_ratio = _debt_val / _revenue_val if _revenue_val > 0 else 0.5
@@ -165,12 +178,13 @@ JSON:"""
             "inflation": inflation,
             "revenueGrowth": 15.0,
             "debtRatio": _debt_ratio,
-            "volatility": 0.15
+            "volatility": 0.15,
         }
         risk_results = pesa_risk_model.predict(risk_inputs)
 
-        # Create or get Company entry
-        company = session.exec(select(Company).where(Company.name == extracted_data_json["company_name"])).first()
+        company = session.exec(
+            select(Company).where(Company.name == extracted_data_json["company_name"])
+        ).first()
         if not company:
             company = Company(
                 name=extracted_data_json["company_name"],
@@ -182,118 +196,84 @@ JSON:"""
                 debt=extracted_data_json.get("debt"),
                 probability_3x_return=float(risk_results.get("confidence") or 0.85) * 100,
                 alpha_score=float(risk_results.get("predictedIrr", 15.0)) / 2,
-                signals=json.dumps([
-                    f"Risk Label: {risk_results['riskLabel']}",
-                    f"Predicted IRR: {risk_results['predictedIrr']}%",
-                    f"Risk-Adjusted Return: {risk_results['riskAdjustedReturn']}%"
-                ])
+                signals=json.dumps([f"Risk Label: {risk_results['riskLabel']}"]),
             )
             session.add(company)
             session.commit()
             session.refresh(company)
 
-        # Store UploadedPDF metadata
         _file_size = os.path.getsize(file_location) / (1024 * 1024) if os.path.exists(file_location) else 0.0
         uploaded_pdf = UploadedPDF(
             company_id=company.id,
-            filename=file.filename,
+            filename=file.filename or "upload.pdf",
             file_path=file_location,
-            file_size_mb=_file_size
+            file_size_mb=_file_size,
         )
         session.add(uploaded_pdf)
-        session.commit()
-        session.refresh(uploaded_pdf)
+        session.flush()
 
-        # Store ExtractedData
         extracted_db_entry = ExtractedData(
             pdf_id=uploaded_pdf.id,
             company_id=company.id,
             company_name=extracted_data_json["company_name"],
             sector=extracted_data_json["sector"],
             revenue=extracted_data_json["revenue"],
-            ebitda=extracted_data_json.get("ebitda"),
-            debt=extracted_data_json.get("debt"),
-            enterprise_value=extracted_data_json.get("enterprise_value"),
         )
         session.add(extracted_db_entry)
-        
-        # Build AI-derived due diligence scores (from LLM extraction, NOT random)
-        _market_risk = _clamp(extracted_data_json.get("market_risk_score"), 1.0, 10.0)
-        _financial_health = _clamp(extracted_data_json.get("financial_health_score"), 1.0, 10.0)
-        _operational_efficiency = _clamp(extracted_data_json.get("operational_efficiency_score"), 1.0, 10.0)
-        _customer_concentration = _clamp(extracted_data_json.get("customer_concentration_score"), 1.0, 10.0)
-        _macro_sensitivity = _clamp(extracted_data_json.get("macro_sensitivity_score"), 1.0, 10.0)
 
-        # Data integrity score: derived from how complete the extracted data is
-        _completeness_fields = ["ebitda", "debt", "enterprise_value", "red_flags", "green_flags"]
-        _filled = sum(1 for f in _completeness_fields if extracted_data_json.get(f) is not None)
-        _data_integrity_score = round(7.0 + (_filled / len(_completeness_fields)) * 2.5, 1)
-
-        # Red/green flags from LLM
-        _red_flags = extracted_data_json.get("red_flags") or []
-        _green_flags = extracted_data_json.get("green_flags") or []
-
-        # Fallback: derive from risk model if LLM didn't provide
-        if not _red_flags:
-            if risk_results["riskScore"] > 0.6:
-                _red_flags.append(f"High risk score: {risk_results['riskLabel']}")
-            if _debt_ratio > 1.0:
-                _red_flags.append("High debt-to-revenue ratio")
-            if not _red_flags:
-                _red_flags.append("Macro sensitivity identified by risk model")
-
-        if not _green_flags:
-            if risk_results["predictedIrr"] > 15:
-                _green_flags.append(f"Strong predicted IRR: {risk_results['predictedIrr']}%")
-            if _debt_ratio < 0.5:
-                _green_flags.append("Conservative debt structure")
-            if not _green_flags:
-                _green_flags.append("Positive risk-adjusted return profile")
-
-        # Delete old diligence report if exists (re-upload scenario)
-        _old_report = session.exec(
+        existing_report = session.exec(
             select(DueDiligenceReport).where(DueDiligenceReport.company_id == company.id)
         ).first()
-        if _old_report:
-            session.delete(_old_report)
-            session.commit()
+        if existing_report:
+            session.delete(existing_report)
+            session.flush()
 
         diligence_report = DueDiligenceReport(
             company_id=company.id,
-            market_risk=_market_risk,
-            financial_health=_financial_health,
-            operational_efficiency=_operational_efficiency,
-            customer_concentration=_customer_concentration,
-            macro_sensitivity=_macro_sensitivity,
-            data_integrity_score=_data_integrity_score,
-            red_flags=json.dumps(_red_flags),
-            green_flags=json.dumps(_green_flags)
+            market_risk=_clamp(extracted_data_json.get("market_risk_score"), 1.0, 10.0),
+            financial_health=_clamp(extracted_data_json.get("financial_health_score"), 1.0, 10.0),
+            operational_efficiency=_clamp(extracted_data_json.get("operational_efficiency_score"), 1.0, 10.0),
+            customer_concentration=_clamp(extracted_data_json.get("customer_concentration_score"), 1.0, 10.0),
+            macro_sensitivity=_clamp(extracted_data_json.get("macro_sensitivity_score"), 1.0, 10.0),
+            data_integrity_score=_clamp(extracted_data_json.get("data_integrity_score"), 1.0, 10.0),
+            red_flags=json.dumps(extracted_data_json.get("red_flags") or []),
+            green_flags=json.dumps(extracted_data_json.get("green_flags") or []),
         )
         session.add(diligence_report)
         session.commit()
 
-        # Clean up temporary file
+        log_activity(
+            session,
+            user.id,
+            "upload_pdf",
+            "upload",
+            str(uploaded_pdf.id),
+            {"company": extracted_data_json["company_name"], "filename": file.filename},
+        )
+
         if os.path.exists(file_location):
             os.remove(file_location)
 
         return {
-            "message": "success", 
-            "company_id": company.external_id, 
-            "extracted_data": extracted_data_json,
-            "risk_results": risk_results
+            "message": "success",
+            "company_id": company.external_id,
+            "extracted_data": {
+                "company_name": extracted_data_json["company_name"],
+                "sector": extracted_data_json["sector"],
+                "revenue": float(extracted_data_json["revenue"]),
+                "ebitda": extracted_data_json.get("ebitda"),
+                "debt": extracted_data_json.get("debt"),
+                "enterprise_value": extracted_data_json.get("enterprise_value"),
+            },
         }
+
+    except HTTPException as http_exc:
+        if file_location and os.path.exists(file_location):
+            os.remove(file_location)
+        raise http_exc
 
     except Exception as e:
         if file_location and os.path.exists(file_location):
             os.remove(file_location)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-def _clamp(value, min_val: float, max_val: float) -> float:
-    """Clamp a value between min and max, with fallback to midpoint."""
-    if value is None:
-        return round((min_val + max_val) / 2, 1)
-    try:
-        v = float(value)
-        return round(max(min_val, min(max_val, v)), 1)
-    except (TypeError, ValueError):
-        return round((min_val + max_val) / 2, 1)
+        print(f"Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")

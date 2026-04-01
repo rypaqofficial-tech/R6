@@ -4,11 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
 import { Slider } from "../components/ui/slider";
 import { Badge } from "../components/ui/badge";
 import { AlertTriangle, Save, RotateCcw, FileText, Trash2, Loader, Upload } from "lucide-react";
-import { uploadApi } from "../lib/api";
+import { uploadApi, emailApi, API_BASE } from "../lib/api";
 import type { UploadedPDFItem } from "../lib/api";
 import { toast } from "sonner";
 
@@ -22,9 +21,6 @@ export default function Settings() {
   const [lagSensitivity, setLagSensitivity] = useState("lag-1");
   const [distressThreshold, setDistressThreshold] = useState(25);
   const [benchmark, setBenchmark] = useState("russell-2000");
-  const [bloombergConnected, setBloombergConnected] = useState(true);
-  const [capitalIQConnected, setCapitalIQConnected] = useState(false);
-  const [pitchbookConnected, setPitchbookConnected] = useState(true);
   const [storageLimit, setStorageLimit] = useState(50);
   const [autoDeleteDays, setAutoDeleteDays] = useState(90);
   const [excludedSectors, setExcludedSectors] = useState(["Tobacco", "Retail"]);
@@ -33,6 +29,19 @@ export default function Settings() {
   const [uploadedPDFs, setUploadedPDFs] = useState<UploadedPDFItem[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [pdfsLoading, setPdfsLoading] = useState(true);
+  const [emailStatus, setEmailStatus] = useState<{ provider: string; email: string | null; connected: boolean }[]>([]);
+
+  const oauthBase = () => {
+    const b = API_BASE.replace(/\/$/, "");
+    return b || "";
+  };
+
+  useEffect(() => {
+    emailApi
+      .status()
+      .then(setEmailStatus)
+      .catch(() => setEmailStatus([]));
+  }, []);
 
   useEffect(() => {
     const fetchPDFs = async () => {
@@ -164,43 +173,52 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* B. Data Connectivity */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle>Data Connectivity</CardTitle>
-          <CardDescription>Manage external data feed integrations</CardDescription>
+          <CardTitle>Email & deal capture</CardTitle>
+          <CardDescription>
+            Connect Gmail or Outlook so messages can be archived to deals (OAuth). Configure Google/Microsoft credentials on
+            the API server.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* API Integrations */}
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold">API Integrations</Label>
-            <p className="text-xs text-muted-foreground">Toggle data feeds on/off</p>
-
-            <div className="space-y-3 mt-3">
-              <div className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
-                <div>
-                  <p className="font-semibold text-foreground">Bloomberg Terminal</p>
-                  <p className="text-xs text-muted-foreground">Real-time market data</p>
-                </div>
-                <Switch checked={bloombergConnected} onCheckedChange={setBloombergConnected} />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
-                <div>
-                  <p className="font-semibold text-foreground">Capital IQ</p>
-                  <p className="text-xs text-muted-foreground">Company fundamentals & comparables</p>
-                </div>
-                <Switch checked={capitalIQConnected} onCheckedChange={setCapitalIQConnected} />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
-                <div>
-                  <p className="font-semibold text-foreground">PitchBook</p>
-                  <p className="text-xs text-muted-foreground">M&A and private equity data</p>
-                </div>
-                <Switch checked={pitchbookConnected} onCheckedChange={setPitchbookConnected} />
-              </div>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="default"
+              className="transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                const b = oauthBase();
+                window.location.href = b ? `${b}/api/email/gmail/start` : "/api/email/gmail/start";
+              }}
+            >
+              Connect Gmail
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                const b = oauthBase();
+                window.location.href = b ? `${b}/api/email/outlook/start` : "/api/email/outlook/start";
+              }}
+            >
+              Connect Outlook
+            </Button>
+          </div>
+          <div className="space-y-2 text-sm">
+            <Label className="text-xs font-semibold">Connection status</Label>
+            {emailStatus.length === 0 ? (
+              <p className="text-muted-foreground text-xs">No providers connected yet.</p>
+            ) : (
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {emailStatus.map((r) => (
+                  <li key={r.provider}>
+                    {r.provider}: {r.connected ? (r.email || "connected") : "not connected"}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* Local File Vault */}

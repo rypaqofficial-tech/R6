@@ -4,15 +4,19 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from database import get_session
+from dependencies import GPUser
+from demo_data import DEMO_PORTFOLIOS, DEMO_TOP_TARGETS
 from models import Portfolio, Company
 
 router = APIRouter(prefix="/api", tags=["portfolios"])
 
 
 @router.get("/portfolios")
-async def get_portfolios(session: Session = Depends(get_session)):
+async def get_portfolios(user: GPUser, session: Session = Depends(get_session)):
     """Get all portfolios with summary metrics"""
     try:
+        if user.is_demo:
+            return DEMO_PORTFOLIOS
         portfolios = session.exec(select(Portfolio)).all()
 
         # If no portfolios exist, create a virtual one containing all companies
@@ -113,9 +117,11 @@ async def get_portfolios(session: Session = Depends(get_session)):
     
 # ====================== NEW ENDPOINT FOR TOP SOURCING TARGETS ======================
 @router.get("/portfolios/top-sourcing-targets")
-async def get_top_sourcing_targets(session: Session = Depends(get_session)):
+async def get_top_sourcing_targets(user: GPUser, session: Session = Depends(get_session)):
     """Return top 3 highest-alpha companies for the dashboard"""
     try:
+        if user.is_demo:
+            return DEMO_TOP_TARGETS
         companies = session.exec(
             select(Company)
             .order_by(Company.probability_3x_return.desc())

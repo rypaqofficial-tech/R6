@@ -16,10 +16,17 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     open_id: str = Field(unique=True, index=True)
     email: str = Field(unique=True, index=True)
-    role: str = Field(default="analyst")  # analyst, admin, investor
+    role: str = Field(default="analyst")  # analyst, admin, lp
     tier: str = Field(default="free")  # free, pro, enterprise
     name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    hashed_password: Optional[str] = None
+    google_sub: Optional[str] = Field(default=None, index=True)
+    email_verified: bool = Field(default=False)
+    verification_token: Optional[str] = Field(default=None, index=True)
+    reset_token_hash: Optional[str] = None
+    reset_token_expires: Optional[datetime] = None
+    is_demo: bool = Field(default=False)
 
 
 class MacroIndicator(SQLModel, table=True):
@@ -159,6 +166,39 @@ class ChronosForecast(SQLModel, table=True):
     confidence_upper: float
     timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
     forecast_date: datetime
+
+
+class ActivityLog(SQLModel, table=True):
+    """Audit trail: who changed what and when"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    action: str = Field(index=True)
+    entity_type: str = Field(default="general")
+    entity_id: Optional[str] = None
+    details: str = Field(default="{}")
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class PipelineDeal(SQLModel, table=True):
+    """Kanban pipeline card (per GP user)"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    company_id: Optional[int] = Field(default=None, foreign_key="company.id", index=True)
+    title: str
+    stage: str = Field(default="sourcing", index=True)
+    sort_order: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EmailConnection(SQLModel, table=True):
+    """OAuth tokens for Gmail / Outlook (encrypt at rest in production)"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    provider: str = Field(index=True)
+    account_email: Optional[str] = None
+    refresh_token_encrypted: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ==================== PYDANTIC REQUEST/RESPONSE MODELS ====================

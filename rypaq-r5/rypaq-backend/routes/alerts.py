@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
-from datetime import datetime, timedelta
 from database import get_session
+from dependencies import GPUser
+from demo_data import DEMO_ALERTS
 from models import Alert
 
 router = APIRouter(prefix="/api", tags=["alerts"])
@@ -11,13 +12,16 @@ router = APIRouter(prefix="/api", tags=["alerts"])
 
 @router.get("/alerts")
 async def get_alerts(
+    user: GPUser,
     severity: str = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
 ):
     """Get alerts"""
     try:
+        if user.is_demo:
+            return DEMO_ALERTS
         query = select(Alert)
         if severity:
             query = query.where(Alert.alert_type == severity)

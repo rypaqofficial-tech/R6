@@ -1,6 +1,4 @@
-import { toast } from "sonner";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+export const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 /**
  * Type definitions for backend responses
@@ -118,6 +116,51 @@ export const api = {
     }
   },
 
+  postJson: async <T>(endpoint: string, body: unknown): Promise<T> => {
+    const url = `${API_BASE}${endpoint.startsWith("/") ? endpoint : "/" + endpoint}`;
+    const response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    return response.json();
+  },
+
+  deleteReq: async <T>(endpoint: string): Promise<T> => {
+    const url = `${API_BASE}${endpoint.startsWith("/") ? endpoint : "/" + endpoint}`;
+    const response = await fetch(url, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    if (response.status === 204) return {} as T;
+    return response.json();
+  },
+
+  patchJson: async <T>(endpoint: string, body: unknown): Promise<T> => {
+    const url = `${API_BASE}${endpoint.startsWith("/") ? endpoint : "/" + endpoint}`;
+    const response = await fetch(url, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    return response.json();
+  },
+
   postFormData: async <T>(endpoint: string, formData: FormData): Promise<T> => {
     try {
       const url = `${API_BASE}${endpoint.startsWith("/") ? endpoint : "/" + endpoint}`;
@@ -176,6 +219,54 @@ export interface UploadedPDFItem {
   company_name: string | null;
 }
 
+export interface ActivityEntry {
+  id: number;
+  user_email: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export const activityApi = {
+  list: () => api.get<ActivityEntry[]>("/api/activity"),
+};
+
+export interface PipelineCard {
+  id: number;
+  title: string;
+  stage: string;
+  company_id: number | null;
+  sort_order: number;
+  updated_at: string;
+}
+
+export const pipelineApi = {
+  list: () => api.get<PipelineCard[]>("/api/pipeline"),
+  create: (body: { title: string; stage?: string }) =>
+    api.postJson<{ id: number }>("/api/pipeline", body),
+  move: (id: number, body: { stage?: string; sort_order?: number; title?: string }) =>
+    api.patchJson<{ ok: boolean }>(`/api/pipeline/${id}`, body),
+  remove: (id: number) => api.deleteReq<{ ok: boolean }>(`/api/pipeline/${id}`),
+};
+
+export const reportsApi = {
+  quarterly: () => api.get<Record<string, unknown>>("/api/reports/quarterly"),
+  waterfall: (body: {
+    total_distribution: number;
+    tiers: { name: string; committed: number; catchup_rate?: number; carry_rate?: number }[];
+  }) => api.postJson<Record<string, unknown>>("/api/reports/waterfall", body),
+};
+
+export const lpApi = {
+  summary: () => api.get<Record<string, unknown>>("/api/lp/summary"),
+};
+
+export const emailApi = {
+  status: () => api.get<{ provider: string; email: string | null; connected: boolean }[]>("/api/email/status"),
+};
+
 export const uploadApi = {
   uploadPdf: (file: File) => {
     const formData = new FormData();
@@ -183,17 +274,6 @@ export const uploadApi = {
     return api.postFormData<UploadResponse>('/api/uploads/pdf', formData);
   },
   listUploads: () => api.get<UploadedPDFItem[]>('/api/uploads/list'),
-  deleteUpload: async (uploadId: number): Promise<{ message: string; id: number }> => {
-    const url = `${API_BASE}/api/uploads/${uploadId}`;
-    const response = await fetch(url, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-    return response.json();
-  },
+  deleteUpload: (uploadId: number) =>
+    api.deleteReq<{ message: string; id: number }>(`/api/uploads/${uploadId}`),
 };

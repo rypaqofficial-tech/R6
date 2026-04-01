@@ -4,6 +4,8 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from database import get_session
+from dependencies import GPUser
+from demo_data import DEMO_DEALS, DEMO_DILIGENCE
 from models import Company, DueDiligenceReport
 
 router = APIRouter(prefix="/api/diligence", tags=["diligence"])
@@ -12,11 +14,14 @@ router = APIRouter(prefix="/api/diligence", tags=["diligence"])
 @router.get("/report/{company_id}")
 async def get_diligence_report(
     company_id: str,
-    session: Session = Depends(get_session)
+    user: GPUser,
+    session: Session = Depends(get_session),
 ):
     """Get due diligence report with risk analysis"""
     try:
-        # Try to get from DB
+        if user.is_demo:
+            name = next((d["company_name"] for d in DEMO_DEALS if d["id"] == company_id), DEMO_DILIGENCE["company_name"])
+            return {**DEMO_DILIGENCE, "company_id": company_id, "company_name": name}
         company = session.exec(
             select(Company).where(Company.external_id == company_id)
         ).first()

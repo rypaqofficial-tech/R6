@@ -1,6 +1,7 @@
 import { useLocation } from "wouter";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
+import BrandLockup from "../components/BrandLockup";
 import { ArrowRight, Zap, Target, Brain, Crown } from "lucide-react";
 
 /**
@@ -38,35 +39,41 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Navigation */}
-      <nav className="border-b border-border/50 backdrop-blur-sm bg-background/80">
+      <nav className="border-b border-border/50 backdrop-blur-md bg-background/85 supports-[backdrop-filter]:bg-background/70">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-8 bg-primary rounded-full"></div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground">RYPAQ</h1>
-          </div>
-          <Button 
-            onClick={() => setLocation("/dashboard")} 
-            className="gap-2 bg-primary hover:bg-primary/90 text-white"
+          <button
+            type="button"
+            onClick={() => setLocation("/")}
+            className="flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Access Platform
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+            <BrandLockup />
+          </button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => setLocation("/login")} className="text-foreground">
+              Sign in
+            </Button>
+            <Button
+              onClick={() => setLocation("/login")}
+              className="gap-2 bg-primary hover:bg-primary/90 text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Access platform
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
+      <section className="relative min-h-[78vh] overflow-hidden">
+        <div
+          className="absolute inset-0 bg-cover bg-[center_30%] sm:bg-center bg-no-repeat bg-scroll lg:bg-fixed"
           style={{
-            backgroundImage: "url('https://d2xsxph8kpxj0f.cloudfront.net/310519663425781167/dDasmicxhNAAtbdRXt6j4y/pe-hero-background-gui7xU6G5QpVqTXi6AxBSH.webp')",
-            backgroundAttachment: "fixed",
+            backgroundImage: "url('/brand/hero-background.jpg')",
           }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/80 to-background/60"></div>
-        </div>
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-background/95 via-background/82 to-background/55" />
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent" />
 
-        <div className="relative max-w-7xl mx-auto px-6 py-32 sm:py-48">
+        <div className="relative max-w-7xl mx-auto px-6 py-28 sm:py-36 lg:py-44">
           <div className="max-w-3xl">
             <h2 className="text-5xl sm:text-6xl font-bold tracking-tight text-foreground mb-6">
               Victory is a Calculation,
@@ -76,20 +83,21 @@ export default function Home() {
               The most successful monopolies were built on knowing the end before the beginning. We provide the structural foresight to acquire, optimize, and dominate. Leave the "calculated risks" to your competitors; we prefer calculated outcomes.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button 
-                onClick={() => setLocation("/dashboard")}
+              <Button
+                onClick={() => setLocation("/login")}
                 size="lg"
-                className="bg-primary hover:bg-primary/90 text-white gap-2"
+                className="bg-primary hover:bg-primary/90 text-white gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
-                Secure Your Dominance
+                Secure your dominance
                 <ArrowRight className="h-5 w-5" />
               </Button>
-              <Button 
+              <Button
                 variant="outline"
                 size="lg"
-                className="border-primary text-primary hover:bg-primary/10"
+                className="border-primary text-primary hover:bg-primary/10 transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                onClick={() => document.getElementById("advantages")?.scrollIntoView({ behavior: "smooth" })}
               >
-                Learn More
+                Learn more
               </Button>
             </div>
           </div>
@@ -108,8 +116,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* The Sovereign Advantage */}
-      <section className="py-20 bg-background">
+      <section id="advantages" className="py-20 bg-background scroll-mt-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h3 className="text-4xl font-bold text-foreground mb-4">The Sovereign Advantage</h3>
@@ -167,12 +174,12 @@ export default function Home() {
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
             Join the elite firms that have already secured their dominance through predictive foresight.
           </p>
-          <Button 
-            onClick={() => setLocation("/dashboard")}
+          <Button
+            onClick={() => setLocation("/login")}
             size="lg"
-            className="bg-primary hover:bg-primary/90 text-white gap-2"
+            className="bg-primary hover:bg-primary/90 text-white gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98]"
           >
-            Get Started Now
+            Get started
             <ArrowRight className="h-5 w-5" />
           </Button>
         </div>
@@ -183,38 +190,72 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid md:grid-cols-4 gap-8 mb-8">
             <div>
-              <h4 className="font-bold text-white mb-4">RYPAQ</h4>
-              <p className="text-sm text-slate-400">Predictive intelligence for private equity dominance.</p>
+              <div className="mb-4 [&_img]:max-w-[160px] [&_img]:max-h-10">
+                <BrandLockup
+                  wordmarkClassName="text-lg font-bold tracking-tight text-white"
+                  markClassName="h-8 w-auto max-h-10 max-w-[160px] object-left object-contain"
+                />
+              </div>
+              <p className="text-sm text-slate-400">Operating system for African GPs — pipeline to portfolio in one place.</p>
             </div>
             <div>
               <h4 className="font-semibold text-white mb-4">Product</h4>
               <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="#" className="hover:text-primary">Smart Deal Sourcing</a></li>
-                <li><a href="#" className="hover:text-primary">Precision Valuation</a></li>
-                <li><a href="#" className="hover:text-primary">Due Diligence</a></li>
+                <li>
+                  <button type="button" onClick={() => setLocation("/login")} className="hover:text-primary text-left">
+                    Smart deal sourcing
+                  </button>
+                </li>
+                <li>
+                  <button type="button" onClick={() => setLocation("/login")} className="hover:text-primary text-left">
+                    Due diligence
+                  </button>
+                </li>
+                <li>
+                  <button type="button" onClick={() => setLocation("/register")} className="hover:text-primary text-left">
+                    Create account
+                  </button>
+                </li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold text-white mb-4">Company</h4>
               <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="#" className="hover:text-primary">About</a></li>
-                <li><a href="#" className="hover:text-primary">Blog</a></li>
-                <li><a href="#" className="hover:text-primary">Contact</a></li>
+                <li>
+                  <button type="button" onClick={() => setLocation("/login")} className="hover:text-primary text-left">
+                    LP portal
+                  </button>
+                </li>
+                <li>
+                  <button type="button" onClick={() => document.getElementById("advantages")?.scrollIntoView({ behavior: "smooth" })} className="hover:text-primary text-left">
+                    Platform overview
+                  </button>
+                </li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold text-white mb-4">Legal</h4>
               <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="#" className="hover:text-primary">Privacy</a></li>
-                <li><a href="#" className="hover:text-primary">Terms</a></li>
-                <li><a href="#" className="hover:text-primary">Security</a></li>
+                <li className="text-slate-500">Privacy & terms — contact your administrator.</li>
               </ul>
             </div>
           </div>
 
-          <div className="border-t border-slate-800 pt-8">
+          <div className="border-t border-slate-800 pt-8 space-y-2">
             <p className="text-center text-sm text-slate-400">
               © 2026 RYPAQ. In the court of capital, those who see the furthest move the fastest.
+            </p>
+            <p className="text-center text-xs text-slate-600">
+              Hero photo via{" "}
+              <a
+                href="https://www.pexels.com"
+                className="underline underline-offset-2 hover:text-slate-400"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Pexels
+              </a>
+              . Swap the file at <code className="text-slate-500">public/brand/hero-background.jpg</code>.
             </p>
           </div>
         </div>

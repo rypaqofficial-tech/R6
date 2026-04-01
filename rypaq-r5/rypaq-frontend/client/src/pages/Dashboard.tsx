@@ -31,6 +31,7 @@ import {
   CartesianGrid
 } from "recharts";
 import { macroApi, dealApi, alertsApi, portfolioApi, uploadApi } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 import type { UploadedPDFItem } from "../lib/api";
 import { toast } from "sonner";
 import type { MacroIndicators, DealOpportunity, Alert, Portfolio } from "../lib/api";
@@ -44,6 +45,7 @@ type TopSourcingTarget = {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [macroData, setMacroData] = useState<MacroIndicators | null>(null);
   const [deals, setDeals] = useState<DealOpportunity[]>([]);
@@ -147,6 +149,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {user?.is_demo && (
+        <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-900 dark:text-cyan-100">
+          Demo mode: you are viewing sample portfolio and deal data. PDF upload is disabled. Sign in with a full account and{" "}
+          <code className="text-xs bg-background/50 px-1 rounded">GEMINI_API_KEY</code> for live document extraction.
+        </div>
+      )}
       {/* Header & Upload */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

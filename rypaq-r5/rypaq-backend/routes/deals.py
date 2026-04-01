@@ -4,16 +4,19 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from database import get_session
+from dependencies import GPUser
+from demo_data import DEMO_DEALS
 from models import Company
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
 
 @router.get("/opportunities")
-async def get_deal_opportunities(session: Session = Depends(get_session)):
+async def get_deal_opportunities(user: GPUser, session: Session = Depends(get_session)):
     """Get deal sourcing opportunities with Alpha scores"""
     try:
-        # Get companies from DB
+        if user.is_demo:
+            return DEMO_DEALS
         companies = session.exec(select(Company)).all()
 
         if companies:

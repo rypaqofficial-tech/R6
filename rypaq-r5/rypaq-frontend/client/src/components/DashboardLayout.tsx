@@ -1,8 +1,23 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "./ui/button";
-import { Menu, X, Zap, Home, Settings, LogOut, Moon, Sun } from "lucide-react";
+import {
+  Menu,
+  X,
+  Zap,
+  Home,
+  Settings,
+  LogOut,
+  Moon,
+  Sun,
+  Columns3,
+  Calculator,
+  ScrollText,
+  BarChart3,
+} from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
+import { useAuth } from "../contexts/AuthContext";
+import BrandLockup from "./BrandLockup";
 
 /**
  * DashboardLayout - Main application layout with sidebar navigation
@@ -13,9 +28,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   const navItems = [
     { label: "Dashboard", icon: Home, href: "/dashboard" },
+    { label: "Pipeline", icon: Columns3, href: "/pipeline" },
+    { label: "Waterfall", icon: Calculator, href: "/waterfall" },
+    { label: "Quarterly report", icon: BarChart3, href: "/reports/quarterly" },
+    { label: "Activity", icon: ScrollText, href: "/activity" },
     { label: "Settings", icon: Settings, href: "/settings" },
   ];
 
@@ -24,9 +44,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { label: "Due Diligence", href: "/due-diligence" },
   ];
 
-  const handleLogout = () => {
-    // TODO: Implement logout logic
-    console.log("Logout not yet implemented");
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/login");
   };
 
   return (
@@ -39,12 +59,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
-          <h1 
-            className="text-lg font-bold text-sidebar-foreground cursor-pointer hover:opacity-75 transition-opacity"
+          <button
+            type="button"
+            className="text-left cursor-pointer hover:opacity-90 transition-opacity rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-border"
             onClick={() => setLocation("/")}
           >
-            Rypaq
-          </h1>
+            <BrandLockup
+              markClassName="h-8 w-auto max-h-8 max-w-[140px] object-contain object-left"
+              wordmarkClassName="text-lg font-bold tracking-tight text-sidebar-foreground"
+              className="flex items-center gap-2"
+            />
+          </button>
           <Button
             variant="ghost"
             size="sm"
@@ -65,7 +90,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Button
                   key={item.href}
                   variant="ghost"
-                  className="w-full justify-start gap-3 text-sidebar-foreground hover:bg-secondary hover:text-sidebar-foreground"
+                  className="w-full justify-start gap-3 text-sidebar-foreground hover:bg-secondary hover:text-sidebar-foreground transition-transform hover:translate-x-0.5"
                   onClick={() => {
                     setLocation(item.href);
                     setSidebarOpen(false);
@@ -86,7 +111,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Button
                   key={item.href}
                   variant="ghost"
-                  className="w-full justify-start gap-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sm"
+                  className="w-full justify-start gap-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sm transition-transform hover:translate-x-0.5"
                   onClick={() => {
                     setLocation(item.href);
                     setSidebarOpen(false);
@@ -136,8 +161,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Menu className="h-4 w-4" />
           </Button>
           <div className="flex-1" />
-          <div className="text-sm text-muted-foreground">
-            {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+          <div className="text-sm text-muted-foreground text-right">
+            <div>{user?.email}</div>
+            <div className="text-xs opacity-80">
+              {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            </div>
           </div>
         </header>
 
